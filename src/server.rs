@@ -52,26 +52,24 @@ impl Server {
         tokio::spawn(async move {
             let sync_msg = rmp_serde::to_vec(&Message::Sync).unwrap();
             let mut buf = Vec::new();
+            let mut elapsed = config.sync_duration;
             loop {
+                if elapsed < config.sync_duration {
+                    tokio::time::sleep(config.sync_duration - elapsed).await;
+                }
                 buf.clear();
                 let stopwatch = Instant::now();
                 if let Err(e) = sock_for_sync.send_to(&sync_msg, config.target).await {
                     warn!("Send sync {}", e);
-                    continue;
                 }
                 let now = Utc::now();
                 if let Err(e) = rmp_serde::encode::write(&mut buf, &Message::FollowUp(now)) {
                     warn!("Create FollowUp message: {}", e);
-                    continue;
                 }
                 if let Err(e) = sock_for_sync.send_to(&buf, config.target).await {
                     warn!("Send FollowUp {}", e);
-                    continue;
                 }
-                let elapsed = stopwatch.elapsed();
-                if elapsed < config.sync_duration {
-                    tokio::time::sleep(config.sync_duration - elapsed).await;
-                }
+                elapsed = stopwatch.elapsed();
             }
         });
 
